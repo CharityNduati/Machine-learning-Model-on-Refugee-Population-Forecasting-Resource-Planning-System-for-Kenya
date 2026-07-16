@@ -1,21 +1,4 @@
-This is an IndexError happening right when the app tries to access your categorical columns inside label_encoders:
 
-Python
-valid_origins = list(label_encoders['origin_location_code'].classes_)
-This error usually happens because of one of two things:
-
-The format of label_encoders.pkl: Instead of being a standard Python dictionary where keys are column names (e.g., 'origin_location_code'), it was saved as a list of encoders, a Pandas Series, or a customized object. When you try to key into it using a string, Python throws an index error.
-
-Missing Key/Empty Classes: The file might have been saved in a different order or format during your model training pipeline.
-
-The Self-Diagnostic Fix 🛠️
-Instead of guessing how the object was saved, let's update your app.py with a diagnostic loader.
-
-This script will automatically detect the type of your label_encoders object (whether it is a dictionary, a list, or a dataframe) and extract the encoders safely. If something goes wrong, it will print exactly what is inside your file right on the web screen so we can fix it instantly.
-
-Replace your app.py with this robust version:
-
-Python
 import streamlit as st
 import pandas as pd
 import numpy as np
