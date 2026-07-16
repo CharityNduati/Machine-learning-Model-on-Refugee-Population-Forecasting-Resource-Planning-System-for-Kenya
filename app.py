@@ -86,12 +86,12 @@ class FTTransformer(nn.Module):
 # =====================================================
 @st.cache_resource
 def load_assets():
-    # Load configuration and scaler filenames
+    # Load configuration and scaler filenames without spaces
     label_encoders = joblib.load("label_encoders.pkl")
     scaler = joblib.load("scaler.pkl")
     model_config = joblib.load("model_config.pkl")
     
-    # Safe fallback using .get() to prevent KeyError
+    # Handle potentially missing dropout keys gracefully (fallback)
     attn_dropout = model_config.get('attn_dropout', 0.1)
     ff_dropout = model_config.get('ff_dropout', 0.1)
     
@@ -105,7 +105,6 @@ def load_assets():
         attn_dropout=attn_dropout,
         ff_dropout=ff_dropout
     )
-    
     # Map weights explicitly to CPU device
     state_dict = torch.load("ft_transformer_model.pth", map_location=device)
     model.load_state_dict(state_dict)
@@ -114,12 +113,17 @@ def load_assets():
     
     return model, label_encoders, scaler
 
+# Initialise variables as None
+model, label_encoders, scaler = None, None, None
+
 try:
     model, label_encoders, scaler = load_assets()
     st.success("🤖 State-of-the-art FT-Transformer Model loaded successfully on CPU!")
 except Exception as e:
-    st.error(f"Error loading assets: {e}")
-    st.info("Ensure that 'ft_transformer_model.pth', 'model_config.pkl', 'label_encoders.pkl', and 'scaler.pkl' are in your root directory.")
+    st.error(f"⚠️ Error loading assets: {e}")
+    st.warning("Please make sure 'ft_transformer_model.pth', 'model_config.pkl', 'label_encoders.pkl', and 'scaler.pkl' are uploaded to your main repository folder.")
+    # Halt execution so the NameError does not crash the page
+    st.stop()
 
 # =====================================================
 # Application UI
@@ -271,5 +275,5 @@ st.caption("""
 Built using PyTorch FT-Transformer • Streamlit • CRISP-DM
 
 Developed as a Data Science Capstone Project by Team **XG BOOST BUSTERS**.
-"""
-)
+""")
+
