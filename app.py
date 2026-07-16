@@ -326,7 +326,17 @@ if label_encoders is not None and model is not None and scaler is not None and m
                     with torch.no_grad():
                         pred_raw = model(tensor_cat, tensor_num).item()
                     
-                    st.session_state.predicted_pop = max(0, int(round(pred_raw)))
+                    # 5. Inverse Scale the predicted population target (at column index 4)
+                    if hasattr(scaler.raw, 'inverse_transform'):
+                        # Reconstruct the 6-feature array structure to safely inverse-scale
+                        dummy_row = np.zeros((1, 6))
+                        dummy_row[0, 4] = pred_raw
+                        inverse_result = scaler.raw.inverse_transform(dummy_row)
+                        pred_unscaled = inverse_result[0, 4]
+                    else:
+                        pred_unscaled = pred_raw
+                    
+                    st.session_state.predicted_pop = max(0, int(round(pred_unscaled)))
                 except Exception as e:
                     st.error(f"Prediction Pipeline Failed: {e}")
 
@@ -345,7 +355,7 @@ if label_encoders is not None and model is not None and scaler is not None and m
             household_size = 5 
             daily_ration_kg = 0.45 
             
-            estimated_households = int(predicted_pop / household_size)
+            estimated_households = int(predicted_pop / household_size) if predicted_pop > 0 else 0
             daily_food_needed = predicted_pop * daily_ration_kg
             monthly_food_tonnes = (daily_food_needed * 30.4) / 1000
             
