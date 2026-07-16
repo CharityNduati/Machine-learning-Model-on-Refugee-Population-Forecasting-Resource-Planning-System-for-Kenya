@@ -87,23 +87,22 @@ class FTTransformer(nn.Module):
 # =====================================================
 @st.cache_resource
 def load_assets():
-    # Robust fallbacks: Attempt to load via joblib first, fall back to pickle if needed
+    # Attempt to load using standard pickle first, fallback to joblib
     try:
-        label_encoders = joblib.load("label_encoders.pkl")
-        scaler = joblib.load("scaler.pkl")
-        model_config = joblib.load("model_config.pkl")
-    except Exception:
         with open("label_encoders.pkl", "rb") as f:
             label_encoders = pickle.load(f)
         with open("scaler.pkl", "rb") as f:
             scaler = pickle.load(f)
         with open("model_config.pkl", "rb") as f:
             model_config = pickle.load(f)
+    except Exception:
+        label_encoders = joblib.load("label_encoders.pkl")
+        scaler = joblib.load("scaler.pkl")
+        model_config = joblib.load("model_config.pkl")
     
-    # Map model weights explicitly to CPU
     state_dict = torch.load("ft_transformer_model.pth", map_location=device)
     
-    # Dynamically detect correct depth directly from saved weights keys to prevent mismatch errors
+    # Dynamically detect correct depth directly from saved weights keys
     max_layer_idx = -1
     for key in state_dict.keys():
         if key.startswith("transformer.layers."):
@@ -113,11 +112,9 @@ def load_assets():
                 
     detected_depth = max_layer_idx + 1 if max_layer_idx != -1 else model_config.get('depth', 3)
     
-    # Handle potentially missing dropout keys gracefully
     attn_dropout = model_config.get('attn_dropout', 0.1)
     ff_dropout = model_config.get('ff_dropout', 0.1)
     
-    # Instantiate the architecture using the precise parameters and detected depth
     model = FTTransformer(
         cat_cardinalities=model_config['cat_cardinalities'],
         num_features=model_config['num_features'],
@@ -134,113 +131,127 @@ def load_assets():
     
     return model, label_encoders, scaler
 
-# Initialize variables to prevent execution crashes
-model, label_encoders, scaler = None, None, None
+# Initialize global variables as None to guarantee they are defined
+model = None
+label_encoders = None
+scaler = None
 
 try:
     model, label_encoders, scaler = load_assets()
     st.success("🤖 State-of-the-art FT-Transformer Model loaded successfully on CPU!")
 except Exception as e:
     st.error(f"⚠️ Error loading assets: {e}")
-    st.warning("Please make sure 'ft_transformer_model.pth', 'model_config.pkl', 'label_encoders.pkl', and 'scaler.pkl' are uploaded to your main repository folder.")
-    st.stop()  # Gracefully halts execution so the page doesn't throw a NameError
+    st.warning("Please verify that 'ft_transformer_model.pth', 'model_config.pkl', 'label_encoders.pkl', and 'scaler.pkl' are in your main GitHub repository directory.")
 
 # =====================================================
-# Application UI
+# Safe Application Execution Guard
 # =====================================================
-st.title("🌍 AI-Powered Refugee Population Forecasting System")
-st.write(
-    """
-    This dashboard leverages an advanced **Feature Tokenizer Transformer (FT-Transformer)** deep learning network 
-    to forecast localized refugee population trends in Kenya and translate predicted figures into immediate resource plans.
-    """
-)
+if label_encoders is not None and model is not None and scaler is not None:
 
-col1, col2 = st.columns([1, 1.2])
+    # =====================================================
+    # Application UI
+    # =====================================================
+    st.title("🌍 AI-Powered Refugee Population Forecasting System")
+    st.write(
+        """
+        This dashboard leverages an advanced **Feature Tokenizer Transformer (FT-Transformer)** deep learning network 
+        to forecast localized refugee population trends in Kenya and translate predicted figures into immediate resource plans.
+        """
+    )
 
-# Extract valid categorical options directly from your trained encoders
-valid_origins = list(label_encoders['origin_location_code'].classes_)
-valid_pop_groups = list(label_encoders['population_group'].classes_)
-valid_genders = list(label_encoders['gender'].classes_)
-valid_age_ranges = list(label_encoders['age_range'].classes_)
+    col1, col2 = st.columns([1, 1.2])
 
-with col1:
-    st.subheader("📋 Demographic Parameters")
-    
-    origin = st.selectbox("Country of Origin", options=valid_origins)
-    population_group = st.selectbox("Population Group Type", options=valid_pop_groups)
-    gender = st.selectbox("Gender Cohort", options=valid_genders)
-    age_range = st.selectbox("Age Range", options=valid_age_ranges)
-    
-    st.subheader("⏱️ Forecasting Timeline")
-    year = st.slider("Target Forecast Year", min_value=2026, max_value=2030, value=2026)
+    # Extract valid categorical options directly from your trained encoders
+    valid_origins = list(label_encoders['origin_location_code'].classes_)
+    valid_pop_groups = list(label_encoders['population_group'].classes_)
+    valid_genders = list(label_encoders['gender'].classes_)
+    valid_age_ranges = list(label_encoders['age_range'].classes_)
 
-    st.subheader("💡 Geopolitical Indicators")
-    origin_has_hrp = st.checkbox("Origin has active Humanitarian Response Plan (HRP)", value=True)
-    origin_in_gho = st.checkbox("Included in Global Humanitarian Overview (GHO)", value=True)
-    asylum_has_hrp = st.checkbox("Kenya has active Humanitarian Response Plan (HRP)", value=True)
-    asylum_in_gho = st.checkbox("Kenya included in Global Humanitarian Overview (GHO)", value=True)
+    with col1:
+        st.subheader("📋 Demographic Parameters")
+        
+        origin = st.selectbox("Country of Origin", options=valid_origins)
+        population_group = st.selectbox("Population Group Type", options=valid_pop_groups)
+        gender = st.selectbox("Gender Cohort", options=valid_genders)
+        age_range = st.selectbox("Age Range", options=valid_age_ranges)
+        
+        st.subheader("⏱️ Forecasting Timeline")
+        year = st.slider("Target Forecast Year", min_value=2026, max_value=2030, value=2026)
 
-with col2:
-    st.subheader("📊 Model Inference & Resource Forecasting")
-    
-    # Calculate age boundaries dynamically for scaling consistency
-    if age_range == "0-4":
-        min_age, max_age = 0.0, 4.0
-    elif age_range == "5-11":
-        min_age, max_age = 5.0, 11.0
-    elif age_range == "12-17":
-        min_age, max_age = 12.0, 17.0
-    elif age_range == "18-59":
-        min_age, max_age = 18.0, 59.0
-    else:  # "60+"
-        min_age, max_age = 60.0, 100.0
+        st.subheader("💡 Geopolitical Indicators")
+        origin_has_hrp = st.checkbox("Origin has active Humanitarian Response Plan (HRP)", value=True)
+        origin_in_gho = st.checkbox("Included in Global Humanitarian Overview (GHO)", value=True)
+        asylum_has_hrp = st.checkbox("Kenya has active Humanitarian Response Plan (HRP)", value=True)
+        asylum_in_gho = st.checkbox("Kenya included in Global Humanitarian Overview (GHO)", value=True)
 
-    # Build input DataFrame matching Scaler training order
-    raw_numerical = pd.DataFrame([{
-        'origin_has_hrp': 1.0 if origin_has_hrp else 0.0,
-        'origin_in_gho': 1.0 if origin_in_gho else 0.0,
-        'min_age': min_age,
-        'max_age': max_age,
-        'population': 0.0,  # Dummy target placeholder
-        'year': float(year)
-    }])
+    with col2:
+        st.subheader("📊 Model Inference & Resource Forecasting")
+        
+        # Calculate age boundaries dynamically
+        if age_range == "0-4":
+            min_age, max_age = 0.0, 4.0
+        elif age_range == "5-11":
+            min_age, max_age = 5.0, 11.0
+        elif age_range == "12-17":
+            min_age, max_age = 12.0, 17.0
+        elif age_range == "18-59":
+            min_age, max_age = 18.0, 59.0
+        else:  # "60+"
+            min_age, max_age = 60.0, 100.0
 
-    # Build categorical inputs
-    raw_categorical = pd.DataFrame([{
-        'origin_location_code': origin,
-        'population_group': population_group,
-        'gender': gender,
-        'age_range': age_range
-    }])
+        # Build input DataFrames
+        raw_numerical = pd.DataFrame([{
+            'origin_has_hrp': 1.0 if origin_has_hrp else 0.0,
+            'origin_in_gho': 1.0 if origin_in_gho else 0.0,
+            'min_age': min_age,
+            'max_age': max_age,
+            'population': 0.0,  
+            'year': float(year)
+        }])
 
-    st.markdown("**Processed Input Vector:**")
-    st.write(pd.concat([raw_categorical, raw_numerical.drop(columns=['population'])], axis=1))
+        raw_categorical = pd.DataFrame([{
+            'origin_location_code': origin,
+            'population_group': population_group,
+            'gender': gender,
+            'age_range': age_range
+        }])
 
-    if st.button("🔮 Run Deep Learning Inference"):
-        try:
-            # 1. Encode Categoricals
-            encoded_cat = raw_categorical.copy()
-            for col in ['origin_location_code', 'population_group', 'gender', 'age_range']:
-                encoded_cat[col] = label_encoders[col].transform(raw_categorical[col])
+        st.markdown("**Processed Input Vector:**")
+        st.write(pd.concat([raw_categorical, raw_numerical.drop(columns=['population'])], axis=1))
+
+        # Initialize session state for prediction so it is persistent
+        if "predicted_pop" not in st.session_state:
+            st.session_state.predicted_pop = None
+
+        if st.button("🔮 Run Deep Learning Inference"):
+            with st.spinner("Calculating predictions..."):
+                try:
+                    # 1. Encode Categoricals
+                    encoded_cat = raw_categorical.copy()
+                    for col in ['origin_location_code', 'population_group', 'gender', 'age_range']:
+                        encoded_cat[col] = label_encoders[col].transform(raw_categorical[col])
+                    
+                    # 2. Scale Numericals
+                    scaled_num = scaler.transform(raw_numerical)
+                    scaled_num_features = np.delete(scaled_num, 4, axis=1)
+
+                    # 3. Convert to Tensors
+                    tensor_cat = torch.tensor(encoded_cat.values, dtype=torch.long).to(device)
+                    tensor_num = torch.tensor(scaled_num_features, dtype=torch.float32).to(device)
+
+                    # 4. Predict
+                    with torch.no_grad():
+                        pred_raw = model(tensor_cat, tensor_num).item()
+                    
+                    st.session_state.predicted_pop = max(0, int(round(pred_raw)))
+                except Exception as e:
+                    st.error(f"Prediction Pipeline Failed: {e}")
+
+        # Display prediction results if present
+        if st.session_state.predicted_pop is not None:
+            predicted_pop = st.session_state.predicted_pop
             
-            # 2. Scale Numericals using loaded Scaler
-            scaled_num = scaler.transform(raw_numerical)
-            # Remove target 'population' index from numeric array to align with feature shape
-            scaled_num_features = np.delete(scaled_num, 4, axis=1)
-
-            # 3. Convert to PyTorch Tensors
-            tensor_cat = torch.tensor(encoded_cat.values, dtype=torch.long).to(device)
-            tensor_num = torch.tensor(scaled_num_features, dtype=torch.float32).to(device)
-
-            # 4. Model Prediction
-            with torch.no_grad():
-                pred_raw = model(tensor_cat, tensor_num).item()
-            
-            # Force non-negativity
-            predicted_pop = max(0, int(round(pred_raw)))
-
-            # Display Target Forecast Result
+            st.success("✅ Prediction Completed!")
             st.metric(
                 label="Predicted Refugee Population Segment", 
                 value=f"{predicted_pop:,} individuals"
@@ -252,21 +263,17 @@ with col2:
             st.markdown("---")
             st.subheader("📦 Projected Resource Requirements")
             
-            # Operational Planning Constants
             household_size = 5 
             daily_ration_kg = 0.45 
             
-            # Calculations
             estimated_households = int(predicted_pop / household_size)
             daily_food_needed = predicted_pop * daily_ration_kg
             monthly_food_tonnes = (daily_food_needed * 30.4) / 1000
             
-            # Enhanced Indicator Calculations
             health_kits = predicted_pop
             school_children = int(predicted_pop * 0.42)
             water_liters = predicted_pop * 15
 
-            # Grid layout for advanced planning metrics
             m_col1, m_col2, m_col3 = st.columns(3)
             with m_col1:
                 st.metric(label="Estimated Households (Shelters)", value=f"{estimated_households:,}")
@@ -281,18 +288,18 @@ with col2:
             💡 **Strategic Guidance:** These estimates map population counts to standard WHO, WFP, and Sphere Handbook humanitarian indicators to streamline camp deployment planning.
             """)
 
-        except Exception as e:
-            st.error(f"Prediction Pipeline Failed: {e}")
-            st.info("Please verify your input mappings align with scaler configurations.")
+    # =====================================================
+    # Application Footer
+    # =====================================================
+    st.markdown("---")
+    st.caption("""
+    🌍 **AI-Powered Refugee Population Forecasting and Humanitarian Resource Planning System for Kenya**
 
-# =====================================================
-# Application Footer
-# =====================================================
-st.markdown("---")
-st.caption("""
-🌍 **AI-Powered Refugee Population Forecasting and Humanitarian Resource Planning System for Kenya**
+    Built using PyTorch FT-Transformer • Streamlit • CRISP-DM
 
-Built using PyTorch FT-Transformer • Streamlit • CRISP-DM
+    Developed as a Data Science Capstone Project by Team **XG BOOST BUSTERS**.
+    """)
 
-Developed as a Data Science Capstone Project by Team **XG BOOST BUSTERS**.
-""")
+else:
+    # If files are missing, show a beautiful standby message instead of crashing
+    st.info("🕒 Standing by... Once the model assets load successfully, the interactive planning panel will appear here.")
