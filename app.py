@@ -1,4 +1,4 @@
-mport streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import torch
@@ -86,12 +86,12 @@ class FTTransformer(nn.Module):
 # =====================================================
 @st.cache_resource
 def load_assets():
-    # Fix 1 & 2: Load clean configuration and scaler filenames without spaces
+    # Load configuration and scaler filenames
     label_encoders = joblib.load("label_encoders.pkl")
     scaler = joblib.load("scaler.pkl")
     model_config = joblib.load("model_config.pkl")
     
-    # Handle potentially missing dropout keys gracefully (Fix 2 fallback)
+    # Handle potentially missing dropout keys gracefully (fallback)
     attn_dropout = model_config.get('attn_dropout', 0.1)
     ff_dropout = model_config.get('ff_dropout', 0.1)
     
@@ -105,7 +105,8 @@ def load_assets():
         attn_dropout=attn_dropout,
         ff_dropout=ff_dropout
     )
-    # Map weights explicitly to CPU device (Fix 3)
+    
+    # Map weights explicitly to CPU device
     state_dict = torch.load("ft_transformer_model.pth", map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
@@ -200,7 +201,8 @@ with col2:
                 encoded_cat[col] = label_encoders[col].transform(raw_categorical[col])
             
             # 2. Scale Numericals using loaded Scaler
-            scaled_num = scaler.transform(raw_numerical)Remove target 'population' index from numeric array to align with feature shape
+            scaled_num = scaler.transform(raw_numerical)
+            # Remove target 'population' index from numeric array to align with feature shape
             scaled_num_features = np.delete(scaled_num, 4, axis=1)
 
             # 3. Convert to PyTorch Tensors
@@ -221,7 +223,7 @@ with col2:
             )
 
             # =================================================
-            # Fix 4: Enhanced Operational Resource Metrics
+            # Operational Resource Metrics
             # =================================================
             st.markdown("---")
             st.subheader("📦 Projected Resource Requirements")
@@ -260,7 +262,7 @@ with col2:
             st.info("Please verify your input mappings align with scaler configurations.")
 
 # =====================================================
-# Fix 5: Application Footer
+# Application Footer
 # =====================================================
 st.markdown("---")
 st.caption("""
