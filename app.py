@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -17,6 +16,47 @@ st.set_page_config(
     page_icon="🌍",
     layout="wide"
 )
+
+# =====================================================
+# Safe & Robust Encoder Wrapper
+# =====================================================
+class FlexibleEncoder:
+    """
+    Automated fallback wrapper. Decides if the wrapped object is a 
+    fitted Sklearn LabelEncoder or raw iterable list of classes, 
+    ensuring .classes_ and .transform() work flawlessly in either case.
+    """
+    def __init__(self, raw_encoder):
+        self.raw = raw_encoder
+        if hasattr(raw_encoder, 'classes_'):
+            self.classes_ = list(raw_encoder.classes_)
+            self.is_sklearn = True
+        elif isinstance(raw_encoder, (list, tuple, np.ndarray)):
+            self.classes_ = list(raw_encoder)
+            self.is_sklearn = False
+        else:
+            self.classes_ = [str(raw_encoder)]
+            self.is_sklearn = False
+
+    def transform(self, sequence):
+        if self.is_sklearn:
+            try:
+                # Try standard sklearn transformation
+                return self.raw.transform(sequence)
+            except Exception:
+                pass
+        
+        # Safe fallback: custom dictionary index-lookup map
+        class_map = {val: idx for idx, val in enumerate(self.classes_)}
+        
+        if hasattr(sequence, 'map'):
+            # Handles Pandas Series mapping safely
+            return sequence.map(lambda x: class_map.get(x, 0))
+        elif isinstance(sequence, (list, tuple, np.ndarray, pd.Series)):
+            return [class_map.get(x, 0) for x in sequence]
+        else:
+            # Single value fallback
+            return class_map.get(sequence, 0)
 
 # =====================================================
 # Recreate the FT-Transformer PyTorch Architecture
@@ -79,7 +119,7 @@ class FTTransformer(nn.Module):
         return self.mlp_head(flat_out)
 
 # =====================================================
-# Safe Loaders & Diagnostics
+# Safe Loaders & Asset Standardization
 # =====================================================
 @st.cache_resource
 def load_assets():
@@ -90,17 +130,22 @@ def load_assets():
     except Exception:
         raw_encoders = joblib.load("label_encoders.pkl")
         
-    # Standardize label_encoders to a clean dictionary
+    # Standardize label_encoders to a clean dictionary of FlexibleEncoders
     label_encoders = {}
+    expected_keys = ['origin_location_code', 'population_group', 'gender', 'age_range']
     
     if isinstance(raw_encoders, dict):
-        label_encoders = raw_encoders
+        for col in expected_keys:
+            if col in raw_encoders:
+                label_encoders[col] = FlexibleEncoder(raw_encoders[col])
+        if len(label_encoders) < len(expected_keys):
+            for i, (k, v) in enumerate(raw_encoders.items()):
+                if i < len(expected_keys):
+                    label_encoders[expected_keys[i]] = FlexibleEncoder(v)
     elif isinstance(raw_encoders, (list, tuple, np.ndarray)):
-        # Treat lists, tuples, and numpy arrays equally!
-        expected_keys = ['origin_location_code', 'population_group', 'gender', 'age_range']
         for i, encoder in enumerate(raw_encoders):
             if i < len(expected_keys):
-                label_encoders[expected_keys[i]] = encoder
+                label_encoders[expected_keys[i]] = FlexibleEncoder(encoder)
     else:
         raise TypeError(f"Loaded encoders are of unsupported type: {type(raw_encoders)}")
 
@@ -158,20 +203,6 @@ try:
     st.success("🤖 FT-Transformer model assets parsed and loaded!")
 except Exception as e:
     st.error(f"⚠️ Error preparing encoders: {e}")
-    # Run interactive diagnostic display so we can inspect what was inside label_encoders.pkl
-    try:
-        with open("label_encoders.pkl", "rb") as f:
-            raw_data = pickle.load(f)
-        st.write("🔧 **Diagnostic Data Inspection of 'label_encoders.pkl':**")
-        st.write(f"- Object Type: `{type(raw_data)}`")
-        if isinstance(raw_data, dict):
-            st.write(f"- Dictionary Keys: `{list(raw_data.keys())}`")
-        elif isinstance(raw_data, (list, tuple, np.ndarray)):
-            st.write(f"- Array Length: `{len(raw_data)}` elements")
-            for idx, item in enumerate(raw_data):
-                st.write(f"  - Element [{idx}] Type: `{type(item)}`")
-    except Exception as diagnostic_err:
-        st.write(f"Could not run diagnostic check: {diagnostic_err}")
 
 # =====================================================
 # App Interface Execution Guard
@@ -188,12 +219,11 @@ if label_encoders is not None and model is not None and scaler is not None:
 
     col1, col2 = st.columns([1, 1.2])
 
-    # Extract valid options using fallback keys if some aren't present
     try:
-        valid_origins = list(label_encoders.get('origin_location_code', list(label_encoders.values())[0]).classes_)
-        valid_pop_groups = list(label_encoders.get('population_group', list(label_encoders.values())[1]).classes_)
-        valid_genders = list(label_encoders.get('gender', list(label_encoders.values())[2]).classes_)
-        valid_age_ranges = list(label_encoders.get('age_range', list(label_encoders.values())[3]).classes_)
+        valid_origins = label_encoders['origin_location_code'].classes_
+        valid_pop_groups = label_encoders['population_group'].classes_
+        valid_genders = label_encoders['gender'].classes_
+        valid_age_ranges = label_encoders['age_range'].classes_
     except Exception as parse_err:
         st.error(f"Failed parsing classes from label encoders: {parse_err}")
         st.stop()
@@ -254,14 +284,11 @@ if label_encoders is not None and model is not None and scaler is not None:
         if st.button("🔮 Run Deep Learning Inference"):
             with st.spinner("Calculating predictions..."):
                 try:
-                    # 1. Encode Categoricals safely
+                    # 1. Encode Categoricals using our new FlexibleEncoder wrapper
                     encoded_cat = raw_categorical.copy()
-                    
-                    # Target mapping keys or fallbacks based on loaded keys
                     cat_cols = ['origin_location_code', 'population_group', 'gender', 'age_range']
-                    for idx, col in enumerate(cat_cols):
-                        encoder = label_encoders.get(col, list(label_encoders.values())[idx])
-                        encoded_cat[col] = encoder.transform(raw_categorical[col])
+                    for col in cat_cols:
+                        encoded_cat[col] = label_encoders[col].transform(raw_categorical[col])
                     
                     # 2. Scale Numericals
                     scaled_num = scaler.transform(raw_numerical)
@@ -322,5 +349,3 @@ if label_encoders is not None and model is not None and scaler is not None:
     
     Developed as a Data Science Capstone Project by Team **XG BOOST BUSTERS**.
     """)
-else:
-    st.info("🕒 Check diagnostic instructions above to resolve the file formats.")
