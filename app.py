@@ -328,8 +328,6 @@ st.title("🌍 AI-Powered Refugee Population Forecasting System")
 st.markdown("""
 ### **Project Objective**
 To provide humanitarian organizations with a proactive tool for estimating localized refugee demographic trends in Kenya and automatically calculating downstream resource allocation.
-
-This dashboard uses a trained **Feature Tokenizer Transformer (FT-Transformer)** deep learning model to forecast refugee population trends in Kenya and project crucial logistics requirements like daily water, food distribution, and emergency housing.
 """)
 
 # Clean, user-friendly status message replacing developer messages
@@ -377,7 +375,7 @@ with col1:
     origin = st.selectbox(
         "Country of Origin", 
         options=valid_origins,
-        help="The home country or country of origin of the displaced population cohort."
+        help="❓ What are you doing here: Select the country of origin for the displaced population cohort you wish to forecast."
     )
     population_group = st.selectbox(
         "Population Group Type", 
@@ -389,12 +387,12 @@ with col1:
     gender = st.selectbox(
         "Gender Cohort", 
         options=valid_genders,
-        help="Gender categorization of the demographic cohort."
+        help="❓ What are you doing here: Narrow down your population projection parameters to a specific gender segment."
     )
     age_range = st.selectbox(
         "Age Range", 
         options=valid_age_ranges,
-        help="Age group cohort of the population (e.g., 0-4, 5-11, etc.)."
+        help="❓ What are you doing here: Select an age band cohort. This specific parameter will dynamically dictate the downstream medical, educational, and dietary resource logic profiles."
     )
 
     st.subheader("⏱️ Forecasting Timeline")
@@ -420,16 +418,16 @@ with col1:
     asylum_has_hrp = st.checkbox(
         "Kenya has active Humanitarian Response Plan (HRP)", 
         value=True,
-        help="Indicates if Kenya has an active HRP program deployed."
+        help="❓ What are you doing here: Toggle whether host country operations within Kenya are running under a high-level active strategic HRP response template."
     )
     asylum_in_gho = st.checkbox(
         "Kenya included in Global Humanitarian Overview (GHO)", 
         value=True,
-        help="Indicates if Kenya is part of the current GHO appeal."
+        help="❓ What are you doing here: Indicates if Kenya is tracked inside the current global appeal overview framework."
     )
 
 with col2:
-    st.subheader("📊 Model Inference & Resource Forecasting")
+    st.subheader("📊 Dynamic Baseline Lookup")
     
     baseline_pop = st.number_input(
         "Current Baseline Population (Historical)", 
@@ -439,6 +437,14 @@ with col2:
         step=100,
         help="Baseline Population: Represents the starting size of this cohort. The deep learning model processes this baseline alongside indicators to scale its final forecast."
     )
+    
+    if is_lookup_verified:
+        st.success(f"✅ *Verified database match loaded: {lookup_val:,} individuals (from year {baseline_year}). Feel free to modify.*")
+    else:
+        st.warning(f"ℹ️ *No historical record matching these exact demographics was found. Populated with default anchor value: {lookup_val}*")
+
+    st.markdown("---")
+    st.subheader("🤖 Model Inference & Resource Forecasting")
 
     if age_range == "0-4":
         min_age, max_age = 0.0, 4.0
@@ -513,10 +519,16 @@ with col2:
         predicted_pop = st.session_state.predicted_pop
         
         st.success("🎉 Forecast Generated Successfully!")
-        st.metric(
-            label="👥 Predicted Target Refugee Population Segment", 
-            value=f"{predicted_pop:,} individuals"
-        )
+        st.metric(label="👥 Predicted Target Refugee Population Segment", value=f"{predicted_pop:,} individuals")
+        
+        # Trajectory Growth Bar Comparison Chart Visual 📊
+        st.write("📈 **Trajectory Growth Comparison**")
+        comparison_df = pd.DataFrame({
+            "Stage": [f"Historical Baseline ({baseline_year})", f"AI Forecast ({year})"],
+            "Population Size": [baseline_pop, predicted_pop]
+        }).set_index("Stage")
+        
+        st.bar_chart(comparison_df)
         
         st.markdown("---")
         st.subheader("📦 Projected Resource Requirements")
@@ -548,9 +560,9 @@ with col2:
                 st.caption("⚠️ School-age figures are hidden for 'all' mixed age bands.")
         with m_col2:
             st.metric(label="🍚 Monthly Food Requirement", value=f"{monthly_food_tonnes:.2f} MT")
-            st.metric(label="🚑 Healthcare Kits Needed", value=f"{health_kits:,}")
+            st.metric(label="🚑 Healthcare Kits Required", value=f"{health_kits:,}")
         with m_col3:
-            st.metric(label="💧 Daily Water Requirement", value=f"{water_liters:,} L")
+            st.metric(label="💧 Daily Clean Water Supply", value=f"{water_liters:,} L")
 
         st.markdown(f"**Recommended Health Kit Type:** {profile['health_kit_type']}")
         st.caption(profile["notes"])
